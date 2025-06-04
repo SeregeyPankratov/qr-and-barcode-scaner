@@ -12,7 +12,16 @@
 </head>
 <body>
   <h2>📷 Сканер QR / Штрихкодов</h2>
-
+  
+  <script>    
+  if (window.Telegram && Telegram.WebApp) {
+    Telegram.WebApp.ready();
+    alert("✅ Telegram WebApp API работает!");
+  } else {
+    alert("❌ Telegram WebApp API не доступен. Запуск невозможен.");
+  }
+</script>
+  
   <select id="camera-select"></select>
   <div id="reader"></div>
 
