@@ -1,69 +1,50 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>QR / Barcode Scanner</title>
+  <title>Сканер</title>
   <script src="https://unpkg.com/html5-qrcode"></script>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 20px; }
+    #reader { width: 300px; margin: auto; }
+  </style>
 </head>
 <body>
-  <h1>QR / Barcode Scanner</h1>
-
-  <div id="reader" style="width: 500px;"></div>
-  <button id="restart-btn" style="margin-top: 10px;">🔁 Начать заново</button>
+  <h2>📷 Сканер QR / Штрихкодов</h2>
+  <div id="reader"></div>
 
   <script>
-    const tg = window.Telegram.WebApp;
-
-    // Сообщаем Telegram, что WebApp готов
-    tg.ready();
-
-    let html5QrcodeScanner;
-
     function onScanSuccess(decodedText, decodedResult) {
-      console.log("Сканировано:", decodedText);
-      alert("Результат: " + decodedText);
+      console.log("✅ Считано:", decodedText);
 
-      // ✅ Отправка в Telegram
-      if (tg && tg.sendData) {
-        tg.sendData(decodedText);
+      // Отправка в Telegram WebApp
+      if (window.Telegram && Telegram.WebApp) {
+        Telegram.WebApp.ready(); // инициализация
+        Telegram.WebApp.sendData(decodedText);
+      } else {
+        alert("Telegram WebApp API недоступен");
       }
 
-      // ❌ Останавливаем сканер
-      html5QrcodeScanner.clear().then(() => {
-        console.log("Сканер остановлен.");
-      }).catch(err => {
-        console.error("Ошибка остановки", err);
+      // Останавливаем сканер после успешного сканирования
+      html5QrCode.stop().then(() => {
+        console.log("Сканер остановлен");
       });
     }
 
-    function onScanFailure(error) {
-      // Просто игнорируем ошибки
-    }
+    const html5QrCode = new Html5Qrcode("reader");
 
-    function startScanner() {
-      html5QrcodeScanner = new Html5Qrcode("reader");
-      const config = { fps: 10, qrbox: 250 };
-
-      html5QrcodeScanner.start(
-        { facingMode: "environment" },
-        config,
-        onScanSuccess,
-        onScanFailure
-      ).catch(err => {
-        alert("Ошибка запуска камеры: " + err);
-      });
-    }
-
-    // Автостарт
-    startScanner();
-
-    // Перезапуск по кнопке
-    document.getElementById("restart-btn").addEventListener("click", () => {
-      html5QrcodeScanner.stop().then(() => {
-        startScanner();
-      }).catch(err => {
-        console.error("Не удалось перезапустить", err);
-      });
+    Html5Qrcode.getCameras().then(cameras => {
+      if (cameras && cameras.length) {
+        html5QrCode.start(
+          cameras[0].id,
+          { fps: 10, qrbox: 250 },
+          onScanSuccess
+        );
+      } else {
+        alert("Камера не найдена");
+      }
+    }).catch(err => {
+      alert("Ошибка доступа к камере: " + err);
     });
   </script>
 </body>
