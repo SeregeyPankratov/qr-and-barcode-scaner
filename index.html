@@ -2,30 +2,44 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Сканер с выбором камеры</title>
+  <title>Сканер штрихкодов / QR</title>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
-    body { font-family: sans-serif; padding: 20px; text-align: center; }
-    #reader { width: 300px; margin: 20px auto; }
-    select { margin-top: 10px; padding: 5px; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden;
+      font-family: sans-serif;
+      background: #000;
+    }
+    #reader {
+      width: 100vw;
+      height: 100vh;
+    }
+    #camera-select {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 10;
+      padding: 8px;
+      font-size: 16px;
+    }
   </style>
 </head>
 <body>
-  <h2>📷 Сканер QR / Штрихкодов</h2>
-
   <select id="camera-select"></select>
   <div id="reader"></div>
 
   <script>
     const html5QrCode = new Html5Qrcode("reader");
     const cameraSelect = document.getElementById("camera-select");
-
     let currentCameraId = null;
 
     function startScanner(cameraId) {
       html5QrCode.start(
         cameraId,
-        { fps: 10, qrbox: 250 },
+        { fps: 10, qrbox: { width: 300, height: 300 } }, // Можно убрать qrbox, если нужен фуллскрин
         (decodedText) => {
           console.log("✅ Сканировано:", decodedText);
           if (window.Telegram && Telegram.WebApp) {
@@ -37,7 +51,7 @@
           html5QrCode.stop();
         },
         (errorMessage) => {
-          // Ошибки сканирования (можно не выводить)
+          // console.warn(`❌ ${errorMessage}`);
         }
       ).then(() => {
         currentCameraId = cameraId;
@@ -58,24 +72,29 @@
         return;
       }
 
-      // Добавить камеры в список
+      let preferredCamera = devices[0];
+
       devices.forEach(device => {
+        const labelLower = (device.label || "").toLowerCase();
+        if (labelLower.includes("back") || labelLower.includes("задн")) {
+          preferredCamera = device;
+        }
+
         const option = document.createElement("option");
         option.value = device.id;
         option.text = device.label || `Камера ${cameraSelect.length + 1}`;
         cameraSelect.appendChild(option);
       });
 
-      // Запуск первой камеры по умолчанию
-      startScanner(devices[0].id);
+      cameraSelect.value = preferredCamera.id;
+      startScanner(preferredCamera.id);
 
-      // При смене камеры
       cameraSelect.addEventListener("change", (event) => {
         stopScanner();
         startScanner(event.target.value);
       });
     }).catch(err => {
-      alert("Ошибка получения камер: " + err);
+      alert("Ошибка доступа к камере: " + err);
     });
   </script>
 </body>
