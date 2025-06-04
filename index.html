@@ -2,99 +2,98 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Сканер с выбором камеры</title>
+  <title>Сканер QR / Штрихкодов</title>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
     body { font-family: sans-serif; padding: 20px; text-align: center; }
     #reader { width: 300px; margin: 20px auto; }
     select { margin-top: 10px; padding: 5px; }
+    #status { color: red; font-size: 14px; margin-top: 10px; }
   </style>
 </head>
 <body>
   <h2>📷 Сканер QR / Штрихкодов</h2>
-  
-  <script>    
-  if (window.Telegram && Telegram.WebApp) {
-    Telegram.WebApp.ready();
-    alert("✅ Telegram WebApp API работает!");
-  } else {
-    alert("❌ Telegram WebApp API не доступен. Запуск невозможен.");
-  }
-</script>
-  
+
   <select id="camera-select"></select>
   <div id="reader"></div>
+  <div id="status"></div>
 
   <script>
+    const statusDiv = document.getElementById("status");
+
+    // Проверка доступности Telegram WebApp API
+    if (window.Telegram && Telegram.WebApp) {
+      Telegram.WebApp.ready();
+      Telegram.WebApp.expand();
+      console.log("✅ Telegram WebApp API доступен");
+    } else {
+      statusDiv.innerText = "❌ Telegram WebApp API не доступен. Запуск невозможен.";
+      console.error("Telegram WebApp API недоступен");
+    }
+
     const html5QrCode = new Html5Qrcode("reader");
     const cameraSelect = document.getElementById("camera-select");
     let currentCameraId = null;
 
-    async function startScanner(cameraId) {
-      if (!window.Telegram || !Telegram.WebApp) {
-        alert("❌ Telegram WebApp API не доступен. Запуск невозможен.");
-        return;
-      }
-
-      await stopScanner();
-
+    function startScanner(cameraId) {
       html5QrCode.start(
         cameraId,
         { fps: 10, qrbox: 250 },
         (decodedText) => {
           console.log("✅ Сканировано:", decodedText);
-          Telegram.WebApp.ready();
-          Telegram.WebApp.sendData(decodedText);
+          if (window.Telegram && Telegram.WebApp) {
+            Telegram.WebApp.sendData(decodedText);
+          } else {
+            alert("Telegram WebApp API недоступен.\nДанные: " + decodedText);
+          }
           html5QrCode.stop();
         },
         (errorMessage) => {
-          // Ошибки сканирования не выводим
+          // Ошибки сканирования можно игнорировать
         }
       ).then(() => {
         currentCameraId = cameraId;
-      }).catch(err => {
-        console.error("Ошибка запуска сканера:", err);
       });
     }
 
     function stopScanner() {
-      if (html5QrCode.getState() === Html5QrcodeScannerState.SCANNING) {
-        return html5QrCode.stop().catch(() => {});
+      if (html5QrCode._isScanning) {
+        html5QrCode.stop().then(() => {
+          console.log("Сканер остановлен");
+        });
       }
-      return Promise.resolve();
     }
 
     Html5Qrcode.getCameras().then(devices => {
-      if (!devices || devices.length === 0) {
-        alert("❌ Камеры не найдены.");
+      if (devices.length === 0) {
+        statusDiv.innerText = "❌ Камеры не найдены";
         return;
       }
 
-      // Заполнение списка камер
+      // Заполняем селект и находим заднюю камеру
+      let defaultCameraId = devices[0].id;
+
       devices.forEach((device, index) => {
         const option = document.createElement("option");
         option.value = device.id;
         option.text = device.label || `Камера ${index + 1}`;
         cameraSelect.appendChild(option);
-      });
 
-      // Выбор задней камеры
-      const backCam = devices.find(device =>
-        device.label.toLowerCase().includes("back") ||
-        device.label.toLowerCase().includes("зад")
-      );
-      const defaultCameraId = backCam ? backCam.id : devices[0].id;
+        // Пытаемся выбрать заднюю камеру
+        if (/back|rear|зад/i.test(device.label)) {
+          defaultCameraId = device.id;
+        }
+      });
 
       cameraSelect.value = defaultCameraId;
       startScanner(defaultCameraId);
 
-      // Переключение камер
-      cameraSelect.addEventListener("change", async (event) => {
-        const selectedId = event.target.value;
-        await startScanner(selectedId);
+      cameraSelect.addEventListener("change", (event) => {
+        stopScanner();
+        startScanner(event.target.value);
       });
     }).catch(err => {
-      alert("Ошибка получения списка камер: " + err);
+      statusDiv.innerText = "❌ Ошибка получения камер: " + err;
     });
   </script>
 </body>
