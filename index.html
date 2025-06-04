@@ -32,7 +32,7 @@
             Telegram.WebApp.ready();
             Telegram.WebApp.sendData(decodedText);
           } else {
-            alert("Telegram WebApp API недоступен");
+            alert("Telegram WebApp API недоступен.\nДанные: " + decodedText);
           }
           html5QrCode.stop();
         },
