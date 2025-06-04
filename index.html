@@ -1,64 +1,100 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>QR & Barcode Scanner</title>
-  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Сканер QR и штрихкодов</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.10"></script>
   <style>
-    html, body {
+    body, html {
       margin: 0;
       padding: 0;
       height: 100%;
-      background: #000;
+      background: #121212;
+      color: white;
+      font-family: sans-serif;
     }
     #reader {
-      width: 100vw;
-      height: 100vh;
+      width: 100%;
+      max-width: 600px;
+      margin: auto;
+      position: relative;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+    #camera-select {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 10px;
+      font-size: 16px;
+    }
+    .container {
+      text-align: center;
+      padding: 10px;
     }
   </style>
 </head>
 <body>
-  <div id="reader"></div>
+  <div class="container">
+    <select id="camera-select"></select>
+    <div id="reader"></div>
+  </div>
 
   <script>
-    const telegram = window.Telegram?.WebApp;
-    if (!telegram) {
-      alert("❗ Telegram WebApp API не доступен. Открой через Telegram.");
+    const tg = window.Telegram?.WebApp;
+
+    if (tg) {
+      tg.ready();
+      tg.expand();
+    } else {
+      alert("❗ Telegram WebApp API недоступен. Открой через Telegram Mini App");
     }
 
-    const qrRegion = document.getElementById("reader");
+    const html5QrCode = new Html5Qrcode("reader");
 
-    const qrScanner = new Html5Qrcode("reader");
+    async function initScanner() {
+      const devices = await Html5Qrcode.getCameras();
+      const select = document.getElementById("camera-select");
 
-    Html5Qrcode.getCameras().then(cameras => {
-      const backCamera = cameras.find(cam => cam.label.toLowerCase().includes("back")) || cameras[0];
+      devices.forEach((device, idx) => {
+        const option = document.createElement("option");
+        option.value = device.id;
+        option.text = device.label || `Камера ${idx + 1}`;
+        select.appendChild(option);
+      });
 
-      qrScanner.start(
-        { facingMode: "environment", deviceId: backCamera.deviceId },
-        {
-          fps: 10,
-          qrbox: {
-            width: 250,
-            height: 250,
-          },
-          aspectRatio: 1.0,
-        },
-        qrCodeMessage => {
-          if (telegram?.sendData) {
-            telegram.sendData(qrCodeMessage); // отправка в Telegram
-          } else {
-            alert("Сканировано: " + qrCodeMessage);
-          }
-          qrScanner.stop();
-        },
-        error => {
-          // console.log("Scanning error:", error);
-        }
-      );
-    }).catch(err => {
-      console.error("CAMERA INIT ERROR:", err);
-      alert("Не удалось получить доступ к камере. Убедись, что разрешения даны и открыт через HTTPS.");
+      let defaultCamera = devices.find(d => d.label.toLowerCase().includes("back")) || devices[0];
+      select.value = defaultCamera.id;
+
+      function startCamera(deviceId) {
+        html5QrCode.stop().catch(() => {}).finally(() => {
+          html5QrCode.start(
+            deviceId,
+            {
+              fps: 10,
+              qrbox: { width: 250, height: 250 }
+            },
+            (decodedText) => {
+              html5QrCode.stop();
+              if (tg) tg.sendData(decodedText);
+              else alert("Считано: " + decodedText);
+            },
+            (error) => {
+              // игнорировать ошибки
+            }
+          );
+        });
+      }
+
+      startCamera(select.value);
+
+      select.onchange = () => {
+        startCamera(select.value);
+      };
+    }
+
+    initScanner().catch(err => {
+      alert("Ошибка запуска камеры: " + err);
     });
   </script>
 </body>
