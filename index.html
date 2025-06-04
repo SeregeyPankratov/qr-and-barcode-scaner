@@ -19,63 +19,73 @@
   <script>
     const html5QrCode = new Html5Qrcode("reader");
     const cameraSelect = document.getElementById("camera-select");
-
     let currentCameraId = null;
 
-    function startScanner(cameraId) {
+    async function startScanner(cameraId) {
+      if (!window.Telegram || !Telegram.WebApp) {
+        alert("❌ Telegram WebApp API не доступен. Запуск невозможен.");
+        return;
+      }
+
+      await stopScanner();
+
       html5QrCode.start(
         cameraId,
         { fps: 10, qrbox: 250 },
         (decodedText) => {
           console.log("✅ Сканировано:", decodedText);
-          if (window.Telegram && Telegram.WebApp) {
-            Telegram.WebApp.ready();
-            Telegram.WebApp.sendData(decodedText);
-          } else {
-            alert("Telegram WebApp API недоступен.\nДанные: " + decodedText);
-          }
+          Telegram.WebApp.ready();
+          Telegram.WebApp.sendData(decodedText);
           html5QrCode.stop();
         },
         (errorMessage) => {
-          // Ошибки сканирования (можно не выводить)
+          // Ошибки сканирования не выводим
         }
       ).then(() => {
         currentCameraId = cameraId;
+      }).catch(err => {
+        console.error("Ошибка запуска сканера:", err);
       });
     }
 
     function stopScanner() {
-      if (html5QrCode._isScanning) {
-        html5QrCode.stop().then(() => {
-          console.log("Сканер остановлен");
-        });
+      if (html5QrCode.getState() === Html5QrcodeScannerState.SCANNING) {
+        return html5QrCode.stop().catch(() => {});
       }
+      return Promise.resolve();
     }
 
     Html5Qrcode.getCameras().then(devices => {
-      if (devices.length === 0) {
-        alert("Камера не найдена");
+      if (!devices || devices.length === 0) {
+        alert("❌ Камеры не найдены.");
         return;
       }
 
-      // Добавить камеры в список
-      devices.forEach(device => {
+      // Заполнение списка камер
+      devices.forEach((device, index) => {
         const option = document.createElement("option");
         option.value = device.id;
-        option.text = device.label || `Камера ${cameraSelect.length + 1}`;
+        option.text = device.label || `Камера ${index + 1}`;
         cameraSelect.appendChild(option);
       });
 
-      // Запуск первой камеры по умолчанию
-      startScanner(devices[0].id);
+      // Выбор задней камеры
+      const backCam = devices.find(device =>
+        device.label.toLowerCase().includes("back") ||
+        device.label.toLowerCase().includes("зад")
+      );
+      const defaultCameraId = backCam ? backCam.id : devices[0].id;
 
-      // При смене камеры
-      cameraSelect.addEventListener("change", (event) => {
-        stopScanner();
-        startScanner(event.target.value);
+      cameraSelect.value = defaultCameraId;
+      startScanner(defaultCameraId);
+
+      // Переключение камер
+      cameraSelect.addEventListener("change", async (event) => {
+        const selectedId = event.target.value;
+        await startScanner(selectedId);
       });
     }).catch(err => {
-      alert("Ошибка получения камер: " + err);
+      alert("Ошибка получения списка камер: " + err);
     });
   </script>
 </body>
