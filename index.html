@@ -10,75 +10,111 @@
       padding: 0;
       background: black;
       height: 100%;
-      overflow: hidden;
+      font-family: sans-serif;
     }
+
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+      color: white;
+    }
+
+    select {
+      padding: 6px;
+      font-size: 16px;
+      border-radius: 6px;
+      border: none;
+    }
+
     #reader {
       width: 100vw;
       height: 100vh;
+      position: relative;
     }
   </style>
   <script src="https://unpkg.com/html5-qrcode"></script>
 </head>
 <body>
+  <div id="controls">
+    <select id="cameraSelect"></select>
+  </div>
   <div id="reader"></div>
 
   <script>
-    // Проверка Telegram WebApp API
-    if (window.Telegram && Telegram.WebApp) {
-      Telegram.WebApp.ready();
-    } else {
-      alert("Telegram WebApp API недоступен.\nОткройте через Telegram Mini App.");
-    }
-
     const reader = new Html5Qrcode("reader");
+    const cameraSelect = document.getElementById("cameraSelect");
+    let currentCameraId = null;
 
-    const config = {
+    const qrConfig = {
       fps: 10,
-      qrbox: { width: window.innerWidth, height: window.innerHeight },
-      aspectRatio: window.innerWidth / window.innerHeight,
-      disableFlip: false
+      qrbox: function(viewfinderWidth, viewfinderHeight) {
+        const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+        const boxSize = Math.floor(minEdge * 0.5); // примерно половина экрана
+        return { width: boxSize, height: boxSize };
+      },
+      aspectRatio: window.innerWidth / window.innerHeight
     };
 
     function onScanSuccess(decodedText, decodedResult) {
       console.log("Сканировано:", decodedText);
 
-      // Отправка в Telegram
-      if (Telegram.WebApp && Telegram.WebApp.sendData) {
+      if (Telegram?.WebApp?.sendData) {
         Telegram.WebApp.sendData(decodedText);
       } else {
-        alert("Не удалось отправить данные в Telegram:\n" + decodedText);
+        alert("Telegram WebApp API недоступен. Результат:\n" + decodedText);
       }
 
-      // Остановка сканера после первого успешного считывания
-      reader.stop().then(() => {
-        console.log("Сканирование завершено");
-      }).catch(err => {
-        console.error("Ошибка остановки сканера:", err);
-      });
+      reader.stop();
     }
 
     function onScanFailure(error) {
-      // можно оставить пустым — чтобы не засорять консоль
+      // можно игнорировать ошибки
     }
 
-    // Инициализация камеры
-    Html5Qrcode.getCameras().then(cameras => {
-      if (cameras && cameras.length) {
-        // запуск с задней камеры (если доступна)
-        reader.start(
-          { facingMode: "environment" },
-          config,
-          onScanSuccess,
-          onScanFailure
-        ).catch(err => {
-          alert("Ошибка запуска сканера: " + err);
+    function startCamera(cameraId) {
+      if (currentCameraId) {
+        reader.stop().then(() => {
+          reader.start(cameraId, qrConfig, onScanSuccess, onScanFailure);
         });
       } else {
-        alert("Камеры не найдены.");
+        reader.start(cameraId, qrConfig, onScanSuccess, onScanFailure);
       }
-    }).catch(err => {
-      alert("Ошибка получения списка камер: " + err);
+
+      currentCameraId = cameraId;
+    }
+
+    Html5Qrcode.getCameras().then(devices => {
+      if (devices.length === 0) {
+        alert("Камеры не найдены.");
+        return;
+      }
+
+      devices.forEach(device => {
+        const option = document.createElement("option");
+        option.value = device.id;
+        option.text = device.label || `Камера ${cameraSelect.length + 1}`;
+        cameraSelect.appendChild(option);
+      });
+
+      // Попробовать заднюю камеру как дефолтную (если найдётся)
+      const backCam = devices.find(d => d.label.toLowerCase().includes("back"));
+      const defaultCamId = backCam ? backCam.id : devices[0].id;
+
+      cameraSelect.value = defaultCamId;
+      startCamera(defaultCamId);
     });
+
+    cameraSelect.addEventListener("change", (e) => {
+      startCamera(e.target.value);
+    });
+
+    // Telegram WebApp init
+    if (Telegram?.WebApp) {
+      Telegram.WebApp.ready();
+    }
   </script>
 </body>
 </html>
