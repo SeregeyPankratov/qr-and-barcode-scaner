@@ -1,58 +1,65 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Сканер</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>QR Сканер</title>
   <style>
     html, body {
       margin: 0;
       padding: 0;
-      background: #000;
       height: 100%;
+      background-color: black;
       overflow: hidden;
-      font-family: sans-serif;
+      font-family: Arial, sans-serif;
+      color: white;
     }
 
     #reader {
-      width: 100vw;
-      height: 100vh;
-      position: relative;
-    }
-
-    #cameraSelect {
       position: absolute;
-      top: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 10;
-      padding: 6px 12px;
-      font-size: 16px;
-      border-radius: 6px;
-      border: none;
-      background: rgba(255, 255, 255, 0.8);
+      top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 1;
     }
 
-    /* Стили для рамки сканирования */
     .qr-frame {
       position: absolute;
       top: 50%;
       left: 50%;
-      width: 250px;
-      height: 250px;
+      width: 220px;
+      height: 220px;
       transform: translate(-50%, -50%);
-      border: 2px solid #00FF00;
+      border: 2px solid lime;
+      z-index: 2;
       box-sizing: border-box;
-      z-index: 5;
     }
 
-    /* Скрытие стандартных рамок html5-qrcode */
-    .html5-qrcode-border-box,
-    .html5-qrcode-scanner {
-      display: none !important;
+    #cameraSelect {
+      position: absolute;
+      top: env(safe-area-inset-top, 10px);
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 3;
+      background: rgba(0, 0, 0, 0.7);
+      border: 1px solid #ccc;
+      color: white;
+      font-size: 16px;
+      padding: 6px 12px;
+      border-radius: 5px;
+    }
+
+    @media (max-width: 480px) {
+      .qr-frame {
+        width: 180px;
+        height: 180px;
+      }
+
+      #cameraSelect {
+        font-size: 14px;
+        padding: 4px 10px;
+      }
     }
   </style>
-  <script src="https://unpkg.com/html5-qrcode"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.9"></script>
 </head>
 <body>
   <select id="cameraSelect"></select>
@@ -60,34 +67,34 @@
   <div class="qr-frame"></div>
 
   <script>
-    const reader = new Html5Qrcode("reader");
     const cameraSelect = document.getElementById("cameraSelect");
+    const reader = new Html5Qrcode("reader");
     let currentCameraId = null;
 
     const qrConfig = {
       fps: 10,
-      qrbox: { width: 250, height: 250 },
-      aspectRatio: window.innerWidth / window.innerHeight,
-      disableFlip: false
+      qrbox: { width: 220, height: 220 },
+      aspectRatio: 1.0,
+      disableFlip: true,
     };
 
     function onScanSuccess(decodedText, decodedResult) {
-      console.log("Сканировано:", decodedText);
+      console.log("Scanned:", decodedText);
 
-      if (Telegram?.WebApp?.sendData) {
+      if (window.Telegram?.WebApp?.sendData) {
         Telegram.WebApp.sendData(decodedText);
       } else {
-        alert("Telegram WebApp API недоступен. Результат:\n" + decodedText);
+        alert("Результат: " + decodedText);
       }
 
       reader.stop();
     }
 
     function onScanFailure(error) {
-      // Ошибки можно игнорировать
+      // Ничего не делаем на неудачу
     }
 
-    function startCamera(cameraId) {
+    function startScanner(cameraId) {
       if (currentCameraId) {
         reader.stop().then(() => {
           reader.start(cameraId, qrConfig, onScanSuccess, onScanFailure);
@@ -95,13 +102,12 @@
       } else {
         reader.start(cameraId, qrConfig, onScanSuccess, onScanFailure);
       }
-
       currentCameraId = cameraId;
     }
 
     Html5Qrcode.getCameras().then(devices => {
       if (devices.length === 0) {
-        alert("Камеры не найдены.");
+        alert("Камеры не найдены");
         return;
       }
 
@@ -112,19 +118,15 @@
         cameraSelect.appendChild(option);
       });
 
-      // Попробовать заднюю камеру как дефолтную (если найдётся)
-      const backCam = devices.find(d => d.label.toLowerCase().includes("back"));
-      const defaultCamId = backCam ? backCam.id : devices[0].id;
-
-      cameraSelect.value = defaultCamId;
-      startCamera(defaultCamId);
+      const backCam = devices.find(d => d.label.toLowerCase().includes("back")) || devices[0];
+      cameraSelect.value = backCam.id;
+      startScanner(backCam.id);
     });
 
     cameraSelect.addEventListener("change", (e) => {
-      startCamera(e.target.value);
+      startScanner(e.target.value);
     });
 
-    // Telegram WebApp init
     if (Telegram?.WebApp) {
       Telegram.WebApp.ready();
     }
