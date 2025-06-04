@@ -2,49 +2,80 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Сканер</title>
+  <title>Сканер с выбором камеры</title>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
-    body { font-family: sans-serif; text-align: center; padding: 20px; }
-    #reader { width: 300px; margin: auto; }
+    body { font-family: sans-serif; padding: 20px; text-align: center; }
+    #reader { width: 300px; margin: 20px auto; }
+    select { margin-top: 10px; padding: 5px; }
   </style>
 </head>
 <body>
   <h2>📷 Сканер QR / Штрихкодов</h2>
+
+  <select id="camera-select"></select>
   <div id="reader"></div>
 
   <script>
-    function onScanSuccess(decodedText, decodedResult) {
-      console.log("✅ Считано:", decodedText);
+    const html5QrCode = new Html5Qrcode("reader");
+    const cameraSelect = document.getElementById("camera-select");
 
-      // Отправка в Telegram WebApp
-      if (window.Telegram && Telegram.WebApp) {
-        Telegram.WebApp.ready(); // инициализация
-        Telegram.WebApp.sendData(decodedText);
-      } else {
-        alert("Telegram WebApp API недоступен");
-      }
+    let currentCameraId = null;
 
-      // Останавливаем сканер после успешного сканирования
-      html5QrCode.stop().then(() => {
-        console.log("Сканер остановлен");
+    function startScanner(cameraId) {
+      html5QrCode.start(
+        cameraId,
+        { fps: 10, qrbox: 250 },
+        (decodedText) => {
+          console.log("✅ Сканировано:", decodedText);
+          if (window.Telegram && Telegram.WebApp) {
+            Telegram.WebApp.ready();
+            Telegram.WebApp.sendData(decodedText);
+          } else {
+            alert("Telegram WebApp API недоступен");
+          }
+          html5QrCode.stop();
+        },
+        (errorMessage) => {
+          // Ошибки сканирования (можно не выводить)
+        }
+      ).then(() => {
+        currentCameraId = cameraId;
       });
     }
 
-    const html5QrCode = new Html5Qrcode("reader");
-
-    Html5Qrcode.getCameras().then(cameras => {
-      if (cameras && cameras.length) {
-        html5QrCode.start(
-          cameras[0].id,
-          { fps: 10, qrbox: 250 },
-          onScanSuccess
-        );
-      } else {
-        alert("Камера не найдена");
+    function stopScanner() {
+      if (html5QrCode._isScanning) {
+        html5QrCode.stop().then(() => {
+          console.log("Сканер остановлен");
+        });
       }
+    }
+
+    Html5Qrcode.getCameras().then(devices => {
+      if (devices.length === 0) {
+        alert("Камера не найдена");
+        return;
+      }
+
+      // Добавить камеры в список
+      devices.forEach(device => {
+        const option = document.createElement("option");
+        option.value = device.id;
+        option.text = device.label || `Камера ${cameraSelect.length + 1}`;
+        cameraSelect.appendChild(option);
+      });
+
+      // Запуск первой камеры по умолчанию
+      startScanner(devices[0].id);
+
+      // При смене камеры
+      cameraSelect.addEventListener("change", (event) => {
+        stopScanner();
+        startScanner(event.target.value);
+      });
     }).catch(err => {
-      alert("Ошибка доступа к камере: " + err);
+      alert("Ошибка получения камер: " + err);
     });
   </script>
 </body>
