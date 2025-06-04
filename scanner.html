@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>QR / Barcode Scanner</title>
+  <script src="https://unpkg.com/html5-qrcode"></script>
+</head>
+<body>
+  <h1>QR / Barcode Scanner</h1>
+
+  <div id="reader" style="width: 500px;"></div>
+  <button id="restart-btn" style="margin-top: 10px;">🔁 Начать заново</button>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+
+    // Сообщаем Telegram, что WebApp готов
+    tg.ready();
+
+    let html5QrcodeScanner;
+
+    function onScanSuccess(decodedText, decodedResult) {
+      console.log("Сканировано:", decodedText);
+      alert("Результат: " + decodedText);
+
+      // ✅ Отправка в Telegram
+      if (tg && tg.sendData) {
+        tg.sendData(decodedText);
+      }
+
+      // ❌ Останавливаем сканер
+      html5QrcodeScanner.clear().then(() => {
+        console.log("Сканер остановлен.");
+      }).catch(err => {
+        console.error("Ошибка остановки", err);
+      });
+    }
+
+    function onScanFailure(error) {
+      // Просто игнорируем ошибки
+    }
+
+    function startScanner() {
+      html5QrcodeScanner = new Html5Qrcode("reader");
+      const config = { fps: 10, qrbox: 250 };
+
+      html5QrcodeScanner.start(
+        { facingMode: "environment" },
+        config,
+        onScanSuccess,
+        onScanFailure
+      ).catch(err => {
+        alert("Ошибка запуска камеры: " + err);
+      });
+    }
+
+    // Автостарт
+    startScanner();
+
+    // Перезапуск по кнопке
+    document.getElementById("restart-btn").addEventListener("click", () => {
+      html5QrcodeScanner.stop().then(() => {
+        startScanner();
+      }).catch(err => {
+        console.error("Не удалось перезапустить", err);
+      });
+    });
+  </script>
+</body>
+</html>
