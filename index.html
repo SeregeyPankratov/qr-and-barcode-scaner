@@ -1,14 +1,14 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>QR Scanner</title>
+  <title>Сканер</title>
   <style>
     html, body {
       margin: 0;
       padding: 0;
-      background-color: black;
+      background: black;
       height: 100%;
       overflow: hidden;
     }
@@ -23,34 +23,61 @@
   <div id="reader"></div>
 
   <script>
+    // Проверка Telegram WebApp API
+    if (window.Telegram && Telegram.WebApp) {
+      Telegram.WebApp.ready();
+    } else {
+      alert("Telegram WebApp API недоступен.\nОткройте через Telegram Mini App.");
+    }
+
     const reader = new Html5Qrcode("reader");
 
     const config = {
       fps: 10,
-      qrbox: { width: window.innerWidth, height: window.innerHeight }, // use full screen as QR box
-      facingMode: { exact: "environment" } // use back camera
+      qrbox: { width: window.innerWidth, height: window.innerHeight },
+      aspectRatio: window.innerWidth / window.innerHeight,
+      disableFlip: false
     };
 
-    function onScanSuccess(decodedText) {
-      if (window.Telegram && Telegram.WebApp) {
-        Telegram.WebApp.ready();
+    function onScanSuccess(decodedText, decodedResult) {
+      console.log("Сканировано:", decodedText);
+
+      // Отправка в Telegram
+      if (Telegram.WebApp && Telegram.WebApp.sendData) {
         Telegram.WebApp.sendData(decodedText);
       } else {
-        alert("Telegram WebApp API недоступен.\nДанные: " + decodedText);
+        alert("Не удалось отправить данные в Telegram:\n" + decodedText);
       }
+
+      // Остановка сканера после первого успешного считывания
+      reader.stop().then(() => {
+        console.log("Сканирование завершено");
+      }).catch(err => {
+        console.error("Ошибка остановки сканера:", err);
+      });
     }
 
     function onScanFailure(error) {
-      // Optionally handle scan errors here
+      // можно оставить пустым — чтобы не засорять консоль
     }
 
+    // Инициализация камеры
     Html5Qrcode.getCameras().then(cameras => {
-      reader.start(config.facingMode, config, onScanSuccess, onScanFailure)
-        .catch(err => {
-          alert("Ошибка запуска камеры: " + err);
+      if (cameras && cameras.length) {
+        // запуск с задней камеры (если доступна)
+        reader.start(
+          { facingMode: "environment" },
+          config,
+          onScanSuccess,
+          onScanFailure
+        ).catch(err => {
+          alert("Ошибка запуска сканера: " + err);
         });
+      } else {
+        alert("Камеры не найдены.");
+      }
     }).catch(err => {
-      alert("Не удалось получить доступ к камере: " + err);
+      alert("Ошибка получения списка камер: " + err);
     });
   </script>
 </body>
