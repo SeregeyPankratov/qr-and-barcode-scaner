@@ -8,21 +8,17 @@
   <style>
     body { font-family: sans-serif; padding: 20px; text-align: center; }
     #reader { width: 300px; margin: 20px auto; }
-    select { margin-top: 10px; padding: 5px; }
     #status { color: red; font-size: 14px; margin-top: 10px; }
   </style>
 </head>
 <body>
   <h2>📷 Сканер QR / Штрихкодов</h2>
-
-  <select id="camera-select"></select>
   <div id="reader"></div>
   <div id="status"></div>
 
   <script>
     const statusDiv = document.getElementById("status");
 
-    // Проверка доступности Telegram WebApp API
     if (window.Telegram && Telegram.WebApp) {
       Telegram.WebApp.ready();
       Telegram.WebApp.expand();
@@ -33,13 +29,15 @@
     }
 
     const html5QrCode = new Html5Qrcode("reader");
-    const cameraSelect = document.getElementById("camera-select");
-    let currentCameraId = null;
 
     function startScanner(cameraId) {
       html5QrCode.start(
         cameraId,
-        { fps: 10, qrbox: 250 },
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.333 // Улучшает фокус на QR
+        },
         (decodedText) => {
           console.log("✅ Сканировано:", decodedText);
           if (window.Telegram && Telegram.WebApp) {
@@ -52,17 +50,7 @@
         (errorMessage) => {
           // Ошибки сканирования можно игнорировать
         }
-      ).then(() => {
-        currentCameraId = cameraId;
-      });
-    }
-
-    function stopScanner() {
-      if (html5QrCode._isScanning) {
-        html5QrCode.stop().then(() => {
-          console.log("Сканер остановлен");
-        });
-      }
+      );
     }
 
     Html5Qrcode.getCameras().then(devices => {
@@ -71,28 +59,15 @@
         return;
       }
 
-      // Заполняем селект и находим заднюю камеру
-      let defaultCameraId = devices[0].id;
+      // Попытка выбрать заднюю камеру
+      let backCamera = devices.find(device => /back|rear|зад/i.test(device.label));
+      const cameraId = backCamera ? backCamera.id : devices[0].id;
 
-      devices.forEach((device, index) => {
-        const option = document.createElement("option");
-        option.value = device.id;
-        option.text = device.label || `Камера ${index + 1}`;
-        cameraSelect.appendChild(option);
+      if (!backCamera) {
+        console.warn("⚠️ Задняя камера не найдена. Используется первая доступная.");
+      }
 
-        // Пытаемся выбрать заднюю камеру
-        if (/back|rear|зад/i.test(device.label)) {
-          defaultCameraId = device.id;
-        }
-      });
-
-      cameraSelect.value = defaultCameraId;
-      startScanner(defaultCameraId);
-
-      cameraSelect.addEventListener("change", (event) => {
-        stopScanner();
-        startScanner(event.target.value);
-      });
+      startScanner(cameraId);
     }).catch(err => {
       statusDiv.innerText = "❌ Ошибка получения камер: " + err;
     });
