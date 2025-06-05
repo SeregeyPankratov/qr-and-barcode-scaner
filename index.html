@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Сканер QR / Штрихкодов</title>
+  <title>Сканер</title>
   <script src="https://telegram.org/js/telegram-web-app.js?57"></script>
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
@@ -12,7 +12,7 @@
   </style>
 </head>
 <body>
-  <h2>📷 Сканер QR / Штрихкодов</h2>
+  <h2>Отсканируй шрихкод</h2>
   <div id="reader"></div>
   <div id="status"></div>
 
@@ -36,7 +36,7 @@
         {
           fps: 10,
           qrbox: { width: 250, height: 250 },
-          aspectRatio: 1.333 // Улучшает фокус на QR
+          aspectRatio: 1.333
         },
         (decodedText) => {
           console.log("✅ Сканировано:", decodedText);
@@ -48,9 +48,14 @@
           html5QrCode.stop();
         },
         (errorMessage) => {
-          // Ошибки сканирования можно игнорировать
+          // Игнорируем ошибки
         }
-      );
+      ).then(() => {
+        console.log("Сканер запущен с камерой:", cameraId);
+        localStorage.setItem("preferredCameraId", cameraId);
+      }).catch(err => {
+        statusDiv.innerText = "❌ Не удалось запустить сканер: " + err;
+      });
     }
 
     Html5Qrcode.getCameras().then(devices => {
@@ -59,15 +64,19 @@
         return;
       }
 
-      // Попытка выбрать заднюю камеру
-      let backCamera = devices.find(device => /back|rear|зад/i.test(device.label));
-      const cameraId = backCamera ? backCamera.id : devices[0].id;
+      // Попробуем использовать сохранённую камеру
+      const savedCameraId = localStorage.getItem("preferredCameraId");
+      const matchingDevice = devices.find(d => d.id === savedCameraId);
 
-      if (!backCamera) {
-        console.warn("⚠️ Задняя камера не найдена. Используется первая доступная.");
+      let selectedCameraId = matchingDevice ? matchingDevice.id : null;
+
+      if (!selectedCameraId) {
+        // Пытаемся найти заднюю камеру
+        const backCam = devices.find(d => /back|rear|зад/i.test(d.label));
+        selectedCameraId = backCam ? backCam.id : devices[0].id;
       }
 
-      startScanner(cameraId);
+      startScanner(selectedCameraId);
     }).catch(err => {
       statusDiv.innerText = "❌ Ошибка получения камер: " + err;
     });
