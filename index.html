@@ -1,86 +1,454 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <title>Сканер</title>
-  <script src="https://telegram.org/js/telegram-web-app.js?57"></script>
+  <meta charset="UTF-8">
+  <title>Сканер штрих-кодов</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Telegram WebApp -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <!-- html5-qrcode (Android/desktop) -->
   <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <!-- Quagga2 (iOS 1D) -->
+  <script src="https://unpkg.com/@ericblade/quagga2/dist/quagga.min.js"></script>
+
   <style>
-    body { font-family: sans-serif; padding: 20px; text-align: center; }
-    #reader { width: 300px; margin: 20px auto; }
-    #status { color: red; font-size: 14px; margin-top: 10px; }
+    :root{
+      color-scheme: dark;
+      --frame-w: 80vw;
+      --frame-h: 22vh;
+    }
+
+    *{ box-sizing: border-box; }
+
+    body{
+      margin:0;
+      padding:0;
+      background:#000;
+      overflow:hidden;
+      font-family: system-ui, sans-serif;
+    }
+
+    #reader{
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      z-index: 1;
+      background:#000;
+    }
+
+    #reader > div{
+      width: 100vw !important;
+      height: 100vh !important;
+    }
+
+    #reader video{
+      width: 100vw !important;
+      height: 100vh !important;
+      object-fit: cover !important;
+    }
+
+    /* затемнение вокруг окна (центр экрана) */
+    #overlay{
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      pointer-events:none;
+      z-index: 2;
+
+      clip-path: polygon(
+        0 0, 100% 0, 100% 100%, 0 100%,
+        0 calc(50vh - var(--frame-h)/2),
+        calc((100vw - var(--frame-w))/2) calc(50vh - var(--frame-h)/2),
+        calc((100vw - var(--frame-w))/2) calc(50vh + var(--frame-h)/2),
+        calc((100vw + var(--frame-w))/2) calc(50vh + var(--frame-h)/2),
+        calc((100vw + var(--frame-w))/2) calc(50vh - var(--frame-h)/2),
+        0 calc(50vh - var(--frame-h)/2)
+      );
+    }
+
+    #ui{
+      position: fixed;
+      inset: 0;
+      z-index: 3;
+      color:#fff;
+      pointer-events:none;
+    }
+
+    /* рамка по центру */
+    #frame-center{
+      position: fixed;
+      top: 50vh;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    #frame{
+      position: relative;
+      width: var(--frame-w);
+      height: var(--frame-h);
+    }
+
+    .corner{
+      position:absolute;
+      width: 15%;
+      height: 22%;
+      border: 3px solid #fff;
+    }
+
+    .corner-tl{ top:0; left:0; border-right:none; border-bottom:none; }
+    .corner-tr{ top:0; right:0; border-left:none; border-bottom:none; }
+    .corner-bl{ bottom:0; left:0; border-right:none; border-top:none; }
+    .corner-br{ bottom:0; right:0; border-left:none; border-top:none; }
+
+    #hint{
+      position: fixed;
+      left: 50%;
+      bottom: 16px;
+      transform: translateX(-50%);
+      width: 90vw;
+      max-width: 520px;
+      text-align: center;
+      font-size: 15px;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+      z-index: 4;
+      pointer-events:none;
+    }
+
+    /* эффект успешного скана */
+    #frame.scan-ok .corner{
+      border-color: #22c55e;
+      filter: drop-shadow(0 0 10px rgba(34,197,94,0.95));
+    }
   </style>
 </head>
+
 <body>
-  <h2>Штрихкодты сканерлеңіз<br>
-    Отсканируйте штрихкод</h2>
   <div id="reader"></div>
-  <div id="status"></div>
+  <div id="overlay"></div>
 
-  <script>
-    const statusDiv = document.getElementById("status");
+  <div id="ui">
+    <div id="frame-center">
+      <div id="frame">
+        <div class="corner corner-tl"></div>
+        <div class="corner corner-tr"></div>
+        <div class="corner corner-bl"></div>
+        <div class="corner corner-br"></div>
+      </div>
+    </div>
+  </div>
 
-    if (window.Telegram && Telegram.WebApp) {
-      Telegram.WebApp.ready();
-      Telegram.WebApp.expand();
-      console.log("✅ Telegram WebApp API доступен");
-    } else {
-      statusDiv.innerText = "❌ Telegram WebApp API не доступен. Запуск невозможен.";
-      console.error("Telegram WebApp API недоступен");
+  <div id="hint">Разместите штрих-код внутри рамки</div>
+
+<script>
+  const tg = window.Telegram?.WebApp;
+  if (tg) tg.expand();
+
+  const hint = document.getElementById("hint");
+  const frameEl = document.getElementById("frame");
+  const ua = navigator.userAgent;
+  const isiOS = /iPhone|iPad|iPod/i.test(ua);
+
+  // -------------------------------
+  // Общие эффекты + отправка
+  // -------------------------------
+  function scanOkEffect() {
+    frameEl.classList.remove("scan-ok");
+    void frameEl.offsetWidth;
+    frameEl.classList.add("scan-ok");
+    setTimeout(() => frameEl.classList.remove("scan-ok"), 260);
+  }
+
+  function vibrateOnScan() {
+    try {
+      if (tg?.HapticFeedback?.impactOccurred) {
+        tg.HapticFeedback.impactOccurred("light");
+      } else if (navigator.vibrate) {
+        navigator.vibrate(80);
+      }
+    } catch {}
+  }
+
+  let sent = false;
+  async function sendAndClose(code) {
+    if (sent) return;
+    sent = true;
+
+    scanOkEffect();
+    vibrateOnScan();
+
+    const payload = JSON.stringify({ codes: [code] });
+
+    try {
+      if (isiOS) q_stop();
+      else await h5_safeStop();
+    } catch {}
+
+    tg?.sendData?.(payload);
+    tg?.close?.();
+  }
+
+  function normalizeCode(s) {
+    return String(s || "").trim();
+  }
+
+  // -------------------------------
+  // Рамка: размеры (как у тебя)
+  // -------------------------------
+  function applyFrameSize() {
+    const wFactor = isiOS ? 0.82 : 0.90;
+    const maxW = Math.floor(window.innerWidth * wFactor);
+    const maxH = Math.floor(window.innerHeight * 0.42);
+
+    const w = Math.min(isiOS ? 360 : 420, maxW);
+    const h = Math.min(isiOS ? 180 : 260, maxH);
+
+    document.documentElement.style.setProperty("--frame-w", `${w}px`);
+    document.documentElement.style.setProperty("--frame-h", `${h}px`);
+    return { w, h };
+  }
+
+  let FRAME = applyFrameSize();
+  window.addEventListener("resize", () => { FRAME = applyFrameSize(); });
+
+  function getFrameRect() {
+    return frameEl.getBoundingClientRect();
+  }
+
+  // =====================================================
+  // A) Android / Desktop: html5-qrcode + стабилизация
+  // =====================================================
+  let html5Qr = null;
+  let h5_isStarting = false;
+  let h5_isRunning = false;
+
+  // стабилизация как на iOS
+  let h5_lastCandidate = null;
+  let h5_streak = 0;
+  let h5_lastAcceptedAt = 0;
+
+  const ACCEPT_COOLDOWN_MS = 900;
+  const STREAK_OK = 2;
+
+  function hideLibOverlayKeepVideoHard() {
+    const reader = document.getElementById("reader");
+    const video = reader.querySelector("video");
+    if (!video) return;
+
+    const videoParent = video.parentElement;
+    Array.from(videoParent.children).forEach(el => { if (el !== video) el.style.display = "none"; });
+    Array.from(reader.children).forEach(el => { if (!el.contains(video)) el.style.display = "none"; });
+  }
+
+  async function h5_safeStop() {
+    try { if (html5Qr && h5_isRunning) await html5Qr.stop(); } catch {}
+    try { if (html5Qr) await html5Qr.clear(); } catch {}
+    h5_isRunning = false;
+  }
+
+  function h5_onDecoded(txt) {
+    if (sent) return;
+
+    const now = Date.now();
+    if (now - h5_lastAcceptedAt < ACCEPT_COOLDOWN_MS) return;
+
+    const code = normalizeCode(txt);
+    if (!code) return;
+
+    if (code === h5_lastCandidate) h5_streak += 1;
+    else { h5_lastCandidate = code; h5_streak = 1; }
+
+    if (h5_streak < STREAK_OK) return;
+
+    h5_lastAcceptedAt = now;
+    h5_lastCandidate = null;
+    h5_streak = 0;
+
+    sendAndClose(code);
+  }
+
+  async function h5_start() {
+    if (h5_isStarting || h5_isRunning) return;
+    h5_isStarting = true;
+
+    try {
+      if (!html5Qr) html5Qr = new Html5Qrcode("reader");
+
+      const config = {
+        fps: 10,
+        qrbox: { width: FRAME.w, height: FRAME.h },
+        disableFlip: true,
+        experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39
+        ]
+      };
+
+      await html5Qr.start(
+        { facingMode: "environment" },
+        config,
+        (txt) => h5_onDecoded(txt),
+        () => {}
+      );
+
+      h5_isRunning = true;
+
+      let tries = 0;
+      const t = setInterval(() => {
+        tries += 1;
+        hideLibOverlayKeepVideoHard();
+        if (tries >= 10) clearInterval(t);
+      }, 120);
+
+    } catch (e) {
+      const errText = (typeof e === "string")
+        ? e
+        : `${(e?.name || e?.constructor?.name || "UnknownError")} ${e?.message || ""}`.trim();
+      hint.textContent = `Ошибка камеры: ${errText}`;
+      await h5_safeStop();
+      html5Qr = null;
+    } finally {
+      h5_isStarting = false;
+    }
+  }
+
+  // ==========================================
+  // B) iOS: Quagga2 + ROI (как у тебя)
+  // ==========================================
+  let q_isRunning = false;
+
+  let lastCandidate = null;
+  let candidateStreak = 0;
+  let lastAcceptedAt = 0;
+
+  const STREAK_IN_ROI = 2;
+  const STREAK_UNKNOWN_ROI = 3;
+
+  function q_stop() {
+    try {
+      if (q_isRunning) {
+        Quagga.offDetected(q_onDetected);
+        Quagga.stop();
+      }
+    } catch {}
+    q_isRunning = false;
+  }
+
+  function isInsideFrame(pageX, pageY) {
+    const fr = getFrameRect();
+    return pageX >= fr.left && pageX <= fr.right && pageY >= fr.top && pageY <= fr.bottom;
+  }
+
+  function getCanvasSize() {
+    const c = Quagga?.canvas?.dom?.image;
+    if (!c) return null;
+    const w = c.width || 0;
+    const h = c.height || 0;
+    if (!w || !h) return null;
+    return { w, h };
+  }
+
+  function getBoxCenterPageCoords(result) {
+    const box = result?.box;
+    if (!box || !box.length) return null;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of box) {
+      if (typeof p?.x !== "number" || typeof p?.y !== "number") continue;
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    }
+    if (!isFinite(minX)) return null;
+
+    const sz = getCanvasSize();
+    if (!sz) return null;
+
+    const readerRect = document.getElementById("reader").getBoundingClientRect();
+
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+
+    const pageX = readerRect.left + (cx / sz.w) * readerRect.width;
+    const pageY = readerRect.top  + (cy / sz.h) * readerRect.height;
+
+    return { x: pageX, y: pageY };
+  }
+
+  function q_onDetected(result) {
+    if (sent) return;
+
+    const now = Date.now();
+    if (now - lastAcceptedAt < ACCEPT_COOLDOWN_MS) return;
+
+    const code = normalizeCode(result?.codeResult?.code);
+    if (!code) return;
+
+    const center = getBoxCenterPageCoords(result);
+    let streakNeed = STREAK_UNKNOWN_ROI;
+
+    if (center) {
+      if (!isInsideFrame(center.x, center.y)) return;
+      streakNeed = STREAK_IN_ROI;
     }
 
-    const html5QrCode = new Html5Qrcode("reader");
+    if (code === lastCandidate) candidateStreak += 1;
+    else { lastCandidate = code; candidateStreak = 1; }
 
-    function startScanner(cameraId) {
-      html5QrCode.start(
-        cameraId,
-        {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
-          aspectRatio: 1.333
-        },
-        (decodedText) => {
-          console.log("✅ Сканировано:", decodedText);
-          if (window.Telegram && Telegram.WebApp) {
-            Telegram.WebApp.sendData(decodedText);
-          } else {
-            alert("Telegram WebApp API недоступен.\nДанные: " + decodedText);
-          }
-          html5QrCode.stop();
-        },
-        (errorMessage) => {
-          // Игнорируем ошибки
+    if (candidateStreak < streakNeed) return;
+
+    lastAcceptedAt = now;
+    candidateStreak = 0;
+    lastCandidate = null;
+
+    sendAndClose(code);
+  }
+
+  function q_start() {
+    if (q_isRunning) return;
+
+    const config = {
+      inputStream: {
+        type: "LiveStream",
+        target: document.querySelector("#reader"),
+        constraints: {
+          facingMode: "environment",
+          width:  { min: 640, ideal: 1280 },
+          height: { min: 480, ideal: 720 }
         }
-      ).then(() => {
-        console.log("Сканер запущен с камерой:", cameraId);
-        localStorage.setItem("preferredCameraId", cameraId);
-      }).catch(err => {
-        statusDiv.innerText = "❌ Не удалось запустить сканер: " + err;
-      });
-    }
+      },
+      locate: true,
+      numOfWorkers: 0,
+      decoder: {
+        readers: ["ean_reader","ean_8_reader","code_128_reader","code_39_reader"]
+      }
+    };
 
-    Html5Qrcode.getCameras().then(devices => {
-      if (devices.length === 0) {
-        statusDiv.innerText = "❌ Камеры не найдены";
+    Quagga.init(config, (err) => {
+      if (err) {
+        const msg = `${err?.name || "QuaggaError"} ${err?.message || err}`.trim();
+        hint.textContent = `Ошибка камеры: ${msg}`;
+        q_isRunning = false;
         return;
       }
-
-      // Попробуем использовать сохранённую камеру
-      const savedCameraId = localStorage.getItem("preferredCameraId");
-      const matchingDevice = devices.find(d => d.id === savedCameraId);
-
-      let selectedCameraId = matchingDevice ? matchingDevice.id : null;
-
-      if (!selectedCameraId) {
-        // Пытаемся найти заднюю камеру
-        const backCam = devices.find(d => /back|rear|зад/i.test(d.label));
-        selectedCameraId = backCam ? backCam.id : devices[0].id;
-      }
-
-      startScanner(selectedCameraId);
-    }).catch(err => {
-      statusDiv.innerText = "❌ Ошибка получения камер: " + err;
+      Quagga.onDetected(q_onDetected);
+      Quagga.start();
+      q_isRunning = true;
     });
-  </script>
+  }
+
+  // -------------------------------
+  // Start
+  // -------------------------------
+  if (isiOS) q_start();
+  else h5_start();
+</script>
 </body>
 </html>
